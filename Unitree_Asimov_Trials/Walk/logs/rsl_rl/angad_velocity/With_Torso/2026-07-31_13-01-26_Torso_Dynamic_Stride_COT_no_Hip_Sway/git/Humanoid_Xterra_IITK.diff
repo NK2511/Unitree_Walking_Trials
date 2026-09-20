@@ -1,0 +1,559 @@
+--- git commit ---
+3a65e3e46c8a4f90844cd7d02eb227b29e5db1d1
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   Angad_Asimov_Trials/Gaits/Walker_Trials_README.md
+	modified:   Angad_Asimov_Trials/Walk/config/env_cfgs.py
+	deleted:    moteus/chirp_system_id.py
+	deleted:    moteus/commands.txt
+	deleted:    moteus/motor_sin.py
+	deleted:    moteus/pdcontrol.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	moteus/moteus_position_control.py
+	moteus/moteus_scan.py
+	moteus/moteus_telemetry.py
+	moteus/moteus_venv/
+	moteus/setup_can.sh
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/Angad_Asimov_Trials/Gaits/Walker_Trials_README.md b/Angad_Asimov_Trials/Gaits/Walker_Trials_README.md
+index bb4b6b7..bfba4e2 100644
+--- a/Angad_Asimov_Trials/Gaits/Walker_Trials_README.md
++++ b/Angad_Asimov_Trials/Gaits/Walker_Trials_README.md
+@@ -59,8 +59,8 @@ The gait generation and RL training process evolved through several iterations t
+   * **Result/Issues:** Although this method establishes a highly justified, optimal reference gait pattern, **legs hitting and thigh clipping at higher speeds remains an issue.** Under training, the policy still tends to narrow its stance width and cross its legs to optimize balance at high forward speeds. Solving this will require active collision geometry or specialized foot-to-foot distance rewards in the environment configs.
+ 
+ ### 7. Torso-Actuated Dynamic Stride Scaling via Cost-of-Transport (CoT) Physics Optimization (No Hip Sway)
+-* **Date:** `2026-06-26 12:44`
+-* **Log:** `2026-06-26_12-44-42_Torso_Dynamic_Stride_COT_no_Hip_Sway`
++* **Date:** `2026-06-26 12:44` (Retrained `2026-07-31` for 2,000 iterations due to checkpoint loss during workspace refactoring)
++* **Log:** `With_Torso/<TIMESTAMP>_Torso_Dynamic_Stride_COT_no_Hip_Sway`
+ * **Details:** This trial integrates the 13-DOF model containing an actuated torso yaw joint (`torso_yaw`). The main goal is to leverage upper-body coordination to improve heading stability and balance.
+   * **Angular Momentum Conservation:** The RL policy successfully learned to rotate the heavy 10kg torso in **anti-phase** with the leg swing cycle. This anti-phase torso twisting cancels the leg swing angular momentum around the vertical axis, stabilizing the heading and keeping the base orientation flat.
+   * **Result/Issues:** The robot walks successfully with stable torso actuation. However, at higher forward velocities, the feet still tend to overlap and come together. Resolving this will require either active foot-to-foot distance rewards or enabling active collision geometry on the thighs.
+diff --git a/Angad_Asimov_Trials/Walk/config/env_cfgs.py b/Angad_Asimov_Trials/Walk/config/env_cfgs.py
+index 492ac01..3bd1c46 100644
+--- a/Angad_Asimov_Trials/Walk/config/env_cfgs.py
++++ b/Angad_Asimov_Trials/Walk/config/env_cfgs.py
+@@ -34,6 +34,7 @@ from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
+ def angad_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     """Create Angad rough terrain velocity tracking configuration."""
+     cfg = make_velocity_env_cfg()
++    cfg.scene.num_envs = 4096 if not play else 1
+ 
+     cfg.sim.nconmax = 150
+     cfg.sim.njmax = 600
+@@ -111,7 +112,7 @@ def angad_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+ 
+ 
+     use_dynamic_gait = True  # Toggle this to True to train with the dynamic .npz anchors
+-    use_imitation = False    # Disabled for Phase 10 (Pure RL run)
++    use_imitation = True     # Enabled for Method 7 (Dynamic Stride COT imitation)
+     
+     if use_dynamic_gait:
+         imitation_func = imitation_dynamic_gait
+@@ -217,9 +218,9 @@ def angad_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     cfg.rewards["angular_momentum"].weight = -0.03
+     cfg.rewards["air_time"].weight = 0.5
+     
+-    # Phase 10: Aggressive penalties to prevent stomping
+-    cfg.rewards["soft_landing"].weight = -0.2
+-    cfg.rewards["action_rate_l2"].weight = -0.5
++    # Method 7: Standard penalties
++    cfg.rewards["soft_landing"].weight = -1e-5
++    cfg.rewards["action_rate_l2"].weight = -0.1
+ 
+     cfg.rewards["self_collisions"] = RewardTermCfg(
+         func=self_collision_cost,
+diff --git a/moteus/chirp_system_id.py b/moteus/chirp_system_id.py
+deleted file mode 100644
+index 3657f2d..0000000
+--- a/moteus/chirp_system_id.py
++++ /dev/null
+@@ -1,294 +0,0 @@
+-"""
+-chirp_system_id.py
+-──────────────────────────────────────────────────────────────────────────────
+-Furuta Pendulum — ARM MOTOR SYSTEM IDENTIFICATION via Chirp Signal
+-
+-What this does:
+-  1. Applies a swept-sine (chirp) torque signal to the arm motor.
+-  2. Records position + velocity from Moteus encoder.
+-  3. Fits the equation of motion:
+-
+-       I·α + b·ω + τ_c·sign(ω) = τ_applied
+-
+-     using Ordinary Least Squares (numpy lstsq) to find:
+-       • I    — effective rotational inertia at output shaft [kg·m²]
+-       • b    — viscous damping coefficient [Nm·s/rad]
+-       • τ_c  — Coulomb (dry) friction [Nm]
+-
+-  4. Plots raw data, regression fit quality, and a Bode magnitude estimate.
+-
+-Run:
+-  python furuta_pendulum_balancing_task/chirp_system_id.py
+-
+-Safety:
+-  • Keep pendulum FOLDED DOWN and SECURED (zip-tie or tape).
+-  • Max torque is intentionally limited to CHIRP_AMP (0.15 Nm) — gentle.
+-  • Arm must have full 360° clearance.
+-──────────────────────────────────────────────────────────────────────────────
+-"""
+-
+-import asyncio
+-import math
+-import time
+-import numpy as np
+-import matplotlib.pyplot as plt
+-from scipy.signal import butter, filtfilt
+-import moteus
+-
+-# =====================================================================
+-# CONFIGURATION
+-# =====================================================================
+-
+-GEAR_RATIO   = 8.0    # motor shaft to output shaft
+-
+-# Chirp parameters
+-CHIRP_AMP    = 0.15   # Nm — max torque amplitude (keep LOW and safe)
+-CHIRP_F_START = 0.2   # Hz — starting frequency
+-CHIRP_F_END   = 4.0   # Hz — ending frequency
+-CHIRP_DURATION = 20.0 # seconds — total sweep time
+-
+-# Low-frequency settling burst before chirp (to overcome stiction at start)
+-SETTLE_TORQUE  = 0.05  # Nm
+-SETTLE_TIME    = 1.0   # seconds
+-
+-# Velocity smoothing before differentiation
+-VEL_LOWPASS_HZ = 30.0  # Hz — cutoff for velocity filter before differentiating
+-
+-# =====================================================================
+-# HELPERS
+-# =====================================================================
+-
+-def chirp_torque(t, amp, f_start, f_end, duration):
+-    """Linear chirp: frequency sweeps from f_start to f_end over duration."""
+-    k = (f_end - f_start) / duration          # Hz/s
+-    phase = 2 * math.pi * (f_start * t + 0.5 * k * t ** 2)
+-    return amp * math.sin(phase)
+-
+-
+-def butter_lowpass(data, cutoff_hz, sample_hz, order=4):
+-    """Zero-phase Butterworth lowpass filter."""
+-    nyq = 0.5 * sample_hz
+-    normal_cutoff = cutoff_hz / nyq
+-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+-    return filtfilt(b, a, data)
+-
+-
+-def estimate_sample_rate(t_arr):
+-    dt = np.diff(t_arr)
+-    return 1.0 / np.median(dt)
+-
+-
+-# =====================================================================
+-# MAIN
+-# =====================================================================
+-
+-async def main():
+-    print("=" * 62)
+-    print("  FURUTA ARM — CHIRP SYSTEM IDENTIFICATION")
+-    print("=" * 62)
+-    print("\nSAFETY CHECKLIST — confirm before proceeding:")
+-    print("  [1] Pendulum folded DOWN and zip-tied or taped to the arm.")
+-    print("  [2] Arm has full 360° clear space around it.")
+-    print(f"  [3] Max torque = {CHIRP_AMP} Nm  (gentle).")
+-    print("=" * 62)
+-    input("\nPress ENTER when ready...")
+-
+-    controller = moteus.Controller(id=1)
+-    await controller.set_stop()
+-    await asyncio.sleep(0.2)
+-
+-    log = {
+-        "t":       [],
+-        "tau_cmd": [],  # commanded torque [Nm]
+-        "pos":     [],  # output-shaft position [rev]
+-        "vel":     [],  # output-shaft velocity  [rev/s]
+-    }
+-
+-    # ── PHASE 1: Settle (tiny constant torque so arm is actually moving) ──
+-    print(f"\nPhase 1: Settling for {SETTLE_TIME}s at {SETTLE_TORQUE} Nm ...")
+-    settle_start = time.perf_counter()
+-    while time.perf_counter() - settle_start < SETTLE_TIME:
+-        await controller.set_position(
+-            position=math.nan,
+-            velocity=math.nan,
+-            kp_scale=0.0,
+-            kd_scale=0.0,
+-            feedforward_torque=SETTLE_TORQUE,
+-            maximum_torque=CHIRP_AMP + 0.05,
+-        )
+-        await asyncio.sleep(0.002)
+-
+-    # ── PHASE 2: Chirp ────────────────────────────────────────────────────
+-    print(f"Phase 2: Chirp  {CHIRP_F_START}–{CHIRP_F_END} Hz  over {CHIRP_DURATION}s ...")
+-    chirp_start = time.perf_counter()
+-
+-    while True:
+-        t = time.perf_counter() - chirp_start
+-        if t > CHIRP_DURATION:
+-            break
+-
+-        tau = chirp_torque(t, CHIRP_AMP, CHIRP_F_START, CHIRP_F_END, CHIRP_DURATION)
+-
+-        state = await controller.set_position(
+-            position=math.nan,
+-            velocity=math.nan,
+-            kp_scale=0.0,
+-            kd_scale=0.0,
+-            feedforward_torque=tau,
+-            maximum_torque=CHIRP_AMP + 0.05,
+-            query=True,
+-        )
+-
+-        if state is not None:
+-            pos_motor = state.values.get(moteus.Register.POSITION, math.nan)
+-            vel_motor = state.values.get(moteus.Register.VELOCITY, math.nan)
+-
+-            # Convert from motor-shaft to output-shaft
+-            pos_out = pos_motor / GEAR_RATIO   # revolutions
+-            vel_out = vel_motor / GEAR_RATIO   # rev/s
+-
+-            log["t"].append(t)
+-            log["tau_cmd"].append(tau)
+-            log["pos"].append(pos_out)
+-            log["vel"].append(vel_out)
+-
+-        await asyncio.sleep(0.002)
+-
+-    await controller.set_stop()
+-    print("\nDone! Processing data ...")
+-    analyze_and_plot(log)
+-
+-
+-# =====================================================================
+-# ANALYSIS
+-# =====================================================================
+-
+-def analyze_and_plot(log):
+-    t       = np.array(log["t"])
+-    tau_cmd = np.array(log["tau_cmd"])
+-    vel_rev = np.array(log["vel"])
+-
+-    if len(t) < 50:
+-        print("Not enough data collected.")
+-        return
+-
+-    # Convert velocity rev/s → rad/s
+-    omega = vel_rev * 2 * math.pi
+-
+-    fs = estimate_sample_rate(t)
+-    print(f"  Estimated sample rate: {fs:.1f} Hz")
+-
+-    # ── Smooth velocity before differentiating ────────────────────────
+-    omega_filt = butter_lowpass(omega, VEL_LOWPASS_HZ, fs)
+-
+-    # ── Compute angular acceleration ──────────────────────────────────
+-    alpha = np.gradient(omega_filt, t)  # rad/s²
+-
+-    # ── Least-squares regression ──────────────────────────────────────
+-    # Equation: I·α + b·ω + τ_c·sign(ω) = τ
+-    # Rearrange as: τ = [α, ω, sign(ω)] · [I, b, τ_c]ᵀ
+-    # We trim the first and last 5% to avoid filter edge artefacts.
+-    trim = int(0.05 * len(t))
+-    t_fit       = t[trim:-trim]
+-    tau_fit     = tau_cmd[trim:-trim]
+-    alpha_fit   = alpha[trim:-trim]
+-    omega_fit   = omega_filt[trim:-trim]
+-
+-    A = np.column_stack([
+-        alpha_fit,
+-        omega_fit,
+-        np.sign(omega_fit),
+-    ])
+-    b_vec = tau_fit
+-
+-    params, residuals, rank, sv = np.linalg.lstsq(A, b_vec, rcond=None)
+-    I_est, b_est, tau_c_est = params
+-
+-    tau_predicted = A @ params
+-    ss_res = np.sum((b_vec - tau_predicted) ** 2)
+-    ss_tot = np.sum((b_vec - np.mean(b_vec)) ** 2)
+-    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
+-
+-    print("\n" + "=" * 50)
+-    print("  IDENTIFIED MOTOR PARAMETERS")
+-    print("=" * 50)
+-    print(f"  Inertia  I  = {I_est:.6f}  kg·m²")
+-    print(f"  Damping  b  = {b_est:.6f}  Nm·s/rad")
+-    print(f"  Coulomb τ_c = {tau_c_est:.6f}  Nm")
+-    print(f"  Fit R²      = {r2:.4f}  (1.0 = perfect)")
+-    print("=" * 50)
+-    print("\nMuJoCo XML values to use:")
+-    print(f"  <joint ... damping=\"{b_est:.5f}\" frictionloss=\"{tau_c_est:.5f}\" armature=\"{I_est:.6f}\" />")
+-    print("=" * 50)
+-
+-    # ── PLOTS ─────────────────────────────────────────────────────────
+-    fig, axes = plt.subplots(4, 1, figsize=(13, 12), sharex=False)
+-    fig.suptitle("Furuta Arm — Chirp System Identification Results", fontsize=14)
+-
+-    # 1. Input torque
+-    axes[0].plot(t, tau_cmd, 'b', linewidth=0.8)
+-    axes[0].set_ylabel("τ commanded (Nm)")
+-    axes[0].set_title("Input: Chirp Torque Signal")
+-    axes[0].grid(True)
+-
+-    # 2. Measured velocity
+-    axes[1].plot(t, omega,      'lightblue', linewidth=0.6, label="Raw ω")
+-    axes[1].plot(t, omega_filt, 'b',         linewidth=1.2, label="Filtered ω")
+-    axes[1].set_ylabel("ω (rad/s)")
+-    axes[1].set_title("Output: Angular Velocity (Motor Output Shaft)")
+-    axes[1].legend(fontsize=8)
+-    axes[1].grid(True)
+-
+-    # 3. Regression fit quality (fitted vs actual torque)
+-    axes[2].plot(t_fit, b_vec,          'b',  linewidth=0.8, label="Actual τ",    alpha=0.7)
+-    axes[2].plot(t_fit, tau_predicted,  'r--',linewidth=1.0, label="Predicted τ", alpha=0.9)
+-    axes[2].set_ylabel("Torque (Nm)")
+-    axes[2].set_title(f"Regression Fit Quality  (R² = {r2:.4f})")
+-    axes[2].legend(fontsize=8)
+-    axes[2].grid(True)
+-    axes[2].set_xlabel("Time (s)")
+-
+-    # 4. Bode magnitude estimate (torque → velocity ratio vs frequency)
+-    from numpy.fft import rfft, rfftfreq
+-    if len(t_fit) > 64:
+-        freq  = rfftfreq(len(t_fit), d=1.0/fs)
+-        TAU_F = np.abs(rfft(b_vec))
+-        OMG_F = np.abs(rfft(omega_fit))
+-        # Avoid divide-by-zero
+-        mask  = TAU_F > 1e-6
+-        gain  = np.zeros_like(freq)
+-        gain[mask] = OMG_F[mask] / TAU_F[mask]
+-        axes[3].semilogy(freq[1:], gain[1:], 'g', linewidth=1.0)
+-        axes[3].set_xlabel("Frequency (Hz)")
+-        axes[3].set_ylabel("|ω/τ|  (rad/s / Nm)")
+-        axes[3].set_title("Bode Magnitude  (torque → velocity)")
+-        axes[3].set_xlim([0, CHIRP_F_END + 1])
+-        axes[3].grid(True, which='both')
+-    else:
+-        axes[3].text(0.5, 0.5, "Not enough data for Bode plot",
+-                     ha='center', va='center', transform=axes[3].transAxes)
+-
+-    plt.tight_layout()
+-
+-    # Save CSV for later
+-    try:
+-        import csv
+-        fname = "chirp_system_id_log.csv"
+-        with open(fname, "w", newline="") as f:
+-            w = csv.writer(f)
+-            w.writerow(["t", "tau_cmd", "vel_rad_s"])
+-            for i in range(len(t)):
+-                w.writerow([t[i], tau_cmd[i], omega[i]])
+-        print(f"\nRaw data saved to {fname}")
+-    except Exception as e:
+-        print(f"Could not save CSV: {e}")
+-
+-    plt.show()
+-
+-
+-# =====================================================================
+-# ENTRY
+-# =====================================================================
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+diff --git a/moteus/commands.txt b/moteus/commands.txt
+deleted file mode 100644
+index b3bcdd9..0000000
+--- a/moteus/commands.txt
++++ /dev/null
+@@ -1,10 +0,0 @@
+-lspci | grep -i peak
+-lspci | grep peak
+-ip link
+-radxa@RadxaOrionO6:~$ sudo ip link set can0 down
+-radxa@RadxaOrionO6:~$ sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 sjw 10 dsjw 5 sample-point 0.666 dsample-point 0.666 restart-ms 1000 fd on
+-radxa@RadxaOrionO6:~$ sudo ip link set can0 up
+-radxa@RadxaOrionO6:~$ candump can0
+-radxa@RadxaOrionO6:~$ ip -s -d link show can0
+-cansend can0 001#0000000000000000
+-ip -s link show can0
+diff --git a/moteus/motor_sin.py b/moteus/motor_sin.py
+deleted file mode 100644
+index 91bbff6..0000000
+--- a/moteus/motor_sin.py
++++ /dev/null
+@@ -1,55 +0,0 @@
+-import asyncio
+-import moteus
+-import time
+-import math
+-import matplotlib.pyplot as plt
+-
+-A = 0.25*8
+-f = 0.5
+-T = 10
+-
+-async def main():
+-    c = moteus.Controller(id = 1)
+-
+-    t_log = []
+-    des_log = []
+-    act_log = []
+-
+-    start = time.time()
+-
+-    while True:
+-        t = time.time() - start
+-
+-        if t>T:
+-            break
+-
+-        q_des = A*math.sin(2*math.pi*f*t)
+-
+-        state = await c.set_position(
+-            position = q_des,
+-            maximum_torque = 15.0,
+-            query = True
+-        )
+-
+-        print(state)
+-
+-        if state is None:
+-            print("No telemetry returned")
+-            continue
+-
+-        q_act = state.values[moteus.Register.POSITION]
+-
+-        t_log.append(t)
+-        des_log.append(q_des)
+-        act_log.append(q_act)
+-
+-        await asyncio.sleep(0.01)
+-
+-    await c.set_stop()
+-
+-    plt.figure(figsize=(10,5))
+-    plt.plot(t_log,des_log,label = "Desired")
+-    plt.plot(t_log,act_log,label = "Actual")
+-    plt.show()
+-
+-asyncio.run(main())
+\ No newline at end of file
+diff --git a/moteus/pdcontrol.py b/moteus/pdcontrol.py
+deleted file mode 100644
+index 65e83e5..0000000
+--- a/moteus/pdcontrol.py
++++ /dev/null
+@@ -1,95 +0,0 @@
+-import asyncio
+-import math
+-import time
+-import moteus
+-import matplotlib.pyplot as plt
+-
+-kp = 0.2
+-kd = 0.02
+-
+-q_des = 0.0
+-duration = 25
+-
+-async def main():
+-    c = moteus.Controller(id = 1)
+-    start_time = time.time()
+-
+-    time_log = []
+-    q_des_log = []
+-    q_log =[]
+-    dq_log =[]
+-    tau_log=[]
+-    err_log =[]
+-
+-    while True:
+-
+-        t=time.time()-start_time
+-
+-        if t> duration:
+-            break
+-
+-        state = await c.query()
+-
+-        if state is None:
+-            print("no response")
+-            continue
+-
+-        q = state.values[moteus.Register.POSITION]
+-        dq = state.values[moteus.Register.VELOCITY]
+-
+-        error = q_des - q
+-        torque = kp*error - kd*dq
+-
+-        torque = max(min(torque,0.15), -0.15)
+-
+-        await c.set_position(
+-            position = math.nan,
+-            velocity = 0.2,
+-            kp_scale = 0,
+-            kd_scale = 0,
+-            feedforward_torque = torque,
+-            maximum_torque = 0.05
+-        )
+-
+-        time_log.append(t)
+-        q_des_log.append(q_des)
+-        q_log.append(q)
+-        dq_log.append(dq)
+-        tau_log.append(torque)
+-        err_log.append(error)
+-
+-        print(
+-
+-            f"q={q:.3f}, dq={dq:.3f},"
+-            f"err={error:.3f}, tau={torque:.3f}"
+-        )
+-
+-        await asyncio.sleep(0.01)
+-
+-    await c.set_stop()
+-
+-    plt.figure(figsize=(10,5))
+-    plt.plot(time_log,q_des_log,label = "Desired")
+-    plt.plot(time_log,q_log,label = "Actual")
+-    plt.xlabel("Time(s)")
+-    plt.ylabel("Position(rev)")
+-    plt.title("Position Tracking")
+-    plt.grid()
+-
+-    plt.figure(figsize=(10,5))
+-    plt.plot(time_log,dq_log)
+-    plt.xlabel("Time(s)")
+-    plt.ylabel("Velocity(rev)")
+-    plt.title("Motor Velocity")
+-    plt.grid()
+-
+-    plt.figure(figsize=(10,5))
+-    plt.plot(time_log,tau_log)
+-    plt.xlabel("Time(s)")
+-    plt.ylabel("Torque(Nm)")
+-    plt.grid()
+-
+-    plt.show()
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
+\ No newline at end of file

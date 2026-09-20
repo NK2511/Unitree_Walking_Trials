@@ -1,0 +1,32 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+mjlab_env/
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary & Build Outputs
+build/
+dist/
+*.egg-info/
+.tempmediaStorage/
+*.mp4
+*.WebP
+
+# Large Training Checkpoints & TensorBoard Logs (keep structure, ignore heavy runs)
+logs/rsl_rl/*/
+!logs/rsl_rl/.gitkeep
+wandb/
