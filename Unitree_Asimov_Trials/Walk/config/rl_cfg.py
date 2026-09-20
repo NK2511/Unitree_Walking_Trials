@@ -11,7 +11,7 @@ def asimov_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
     """Create RL runner configuration for Asimov velocity task."""
     return RslRlOnPolicyRunnerCfg(
         policy=RslRlPpoActorCriticCfg(
-            init_noise_std=1.0,
+            init_noise_std=0.5,
             actor_obs_normalization=True,
             critic_obs_normalization=True,
             actor_hidden_dims=(256, 256, 128),  # Smaller network for 12-DOF robot
@@ -32,7 +32,8 @@ def asimov_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
             desired_kl=0.01,
             max_grad_norm=1.0,
         ),
-        experiment_name="angad_velocity",
+        experiment_name="unitree_velocity",
+        logger="tensorboard",
         save_interval=50,
         num_steps_per_env=24,
         max_iterations=30_000,

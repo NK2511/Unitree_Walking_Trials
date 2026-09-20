@@ -33,83 +33,69 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg = make_velocity_env_cfg()
     cfg.scene.num_envs = 4096 if not play else 1
 
-    cfg.sim.nconmax = 150
-    cfg.sim.njmax = 600
+    cfg.sim.nconmax = 100
+    cfg.sim.njmax = 400
 
     robot_cfg = get_unitree_robot_cfg()
     has_torso = any("torso" in name for a in robot_cfg.articulation.actuators for name in a.joint_names_expr)
-    if play:
-        from mjlab.utils.spec_config import CollisionCfg
-        robot_cfg.collisions = (
-            CollisionCfg(
-                geom_names_expr=(r".*_foot_(primitive.*|cap_.*)", r".*_foot_link_geom.*", "floor"),
-                contype={r".*_foot_(primitive.*|cap_.*)": 0, r".*_foot_link_geom.*": 0, "floor": 1},
-                conaffinity={r".*_foot_(primitive.*|cap_.*)": 1, r".*_foot_link_geom.*": 1, "floor": 1},
-                condim={r".*_foot_(primitive.*|cap_.*)": 3, r".*_foot_link_geom.*": 3, "floor": 3},
-                priority={r".*_foot_(primitive.*|cap_.*)": 1, r".*_foot_link_geom.*": 1, "floor": 0},
-                friction={r".*_foot_(primitive.*|cap_.*)": (2.5,), r".*_foot_link_geom.*": (2.5,), "floor": None},
-            ),
-        )
+    
+    from mjlab.utils.spec_config import CollisionCfg
+    robot_cfg.collisions = (
+        CollisionCfg(
+            geom_names_expr=("left_foot", "right_foot", "floor"),
+            contype={"left_foot": 0, "right_foot": 0, "floor": 1},
+            conaffinity={"left_foot": 1, "right_foot": 1, "floor": 1},
+            condim={"left_foot": 3, "right_foot": 3, "floor": 3},
+            priority={"left_foot": 1, "right_foot": 1, "floor": 0},
+            friction={"left_foot": (2.5,), "right_foot": (2.5,), "floor": None},
+        ),
+    )
     cfg.scene.entities = {"robot": robot_cfg}
 
-    # Angad feet sites
-    site_names = ("left_foot_site", "right_foot_site")
-    geom_names = (
-        r".*left_foot_(primitive|link_geom|cap_.*).*",
-        r".*right_foot_(primitive|link_geom|cap_.*).*",
-    )
+    # Unitree G1 feet sites & geoms
+    site_names = ("left_foot", "right_foot")
+    geom_names = ("left_foot", "right_foot")
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern=r"^(left_foot_link|right_foot_link)$",
+            pattern=r"^(left_ankle_roll_link|right_ankle_roll_link)$",
             entity="robot",
         ),
-        secondary=ContactMatch(mode="body", pattern="terrain") if not play else None,
+        secondary=ContactMatch(mode="geom", pattern="terrain", entity=None),
         fields=("found", "force"),
         reduce="netforce",
         num_slots=1,
         track_air_time=True,
     )
 
-    self_collision_cfg = ContactSensorCfg(
-        name="self_collision",
-        primary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
-        secondary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
-        fields=("found",),
-        reduce="none",
-        num_slots=1,
-    )
-
-    cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors = (feet_ground_cfg,)
 
     if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
         cfg.scene.terrain.terrain_generator.curriculum = True
 
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
-    joint_pos_action.scale = ANGAD_ACTION_SCALE
+    joint_pos_action.scale = UNITREE_ACTION_SCALE
 
-    cfg.viewer.body_name = "base"
+    cfg.viewer.body_name = "pelvis"
 
     assert cfg.commands is not None
     twist_cmd = cfg.commands["twist"]
     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-    twist_cmd.viz.z_offset = 0.9  # Angad is taller than Asimov
+    twist_cmd.viz.z_offset = 0.75
 
-    twist_cmd.ranges.lin_vel_x = (-0.8, 2.5)  # Expanded to leverage the full dynamic gait range!
-    twist_cmd.ranges.lin_vel_y = (-0.6, 0.6)
-    twist_cmd.ranges.ang_vel_z = (-0.6, 0.6)
+    twist_cmd.ranges.lin_vel_x = (-0.5, 1.5)
+    twist_cmd.ranges.lin_vel_y = (-0.4, 0.4)
+    twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
 
     # Remove base_lin_vel - not available on real robot IMU
     del cfg.observations["policy"].terms["base_lin_vel"]
     del cfg.observations["critic"].terms["base_lin_vel"]
 
-
-
-    use_dynamic_gait = True  # Toggle this to True to train with the dynamic .npz anchors
-    use_imitation = True     # Enabled for Method 7 (Dynamic Stride COT imitation)
+    use_dynamic_gait = False
+    use_imitation = False     # Pure RL velocity tracking (No imitation)
     
     if use_dynamic_gait:
         imitation_func = imitation_dynamic_gait
@@ -190,22 +176,23 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg"
     ].site_names = site_names
 
-    cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
+    cfg.events["foot_friction"].params["asset_cfg"].body_names = ("left_ankle_roll_link", "right_ankle_roll_link")
+    cfg.events["foot_friction"].params["asset_cfg"].geom_names = None
 
     cfg.rewards["pose"].params["std_standing"] = {".*": 0.05}
     cfg.rewards["pose"].params["std_walking"] = {
-        r".*hip_pitch$": 0.5,
-        r".*hip_roll$": 0.25,
-        r".*hip_yaw$": 0.2,
-        r".*knee_pitch$": 0.5,
-        r".*ankle_pitch$": 0.2,
-        r".*ankle_roll$": 0.12,
+        r".*hip_pitch.*": 0.5,
+        r".*hip_roll.*": 0.25,
+        r".*hip_yaw.*": 0.2,
+        r".*knee.*": 0.5,
+        r".*ankle_pitch.*": 0.2,
+        r".*ankle_roll.*": 0.12,
+        r".*waist.*": 0.10,
     }
-    if has_torso:
-        cfg.rewards["pose"].params["std_walking"][r".*torso_yaw$"] = 0.35
+    cfg.rewards["pose"].params["std_running"] = cfg.rewards["pose"].params["std_walking"]
 
-    cfg.rewards["upright"].params["asset_cfg"].body_names = ("base",)
-    cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("base",)
+    cfg.rewards["upright"].params["asset_cfg"].body_names = ("pelvis",)
+    cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("pelvis",)
 
     for reward_name in ["foot_clearance", "foot_swing_height", "foot_slip"]:
         cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
@@ -219,27 +206,13 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["soft_landing"].weight = -1e-5
     cfg.rewards["action_rate_l2"].weight = -0.1
 
-    cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": self_collision_cfg.name},
-    )
+    # Foot-only ground collisions active (self-collisions removed for max speed)
+    cfg.rewards.pop("self_collisions", None)
 
 
 
-    # Imitation reward for walking reference motion (weight set to 0.0 if disabled)
-    cfg.rewards["imitation"] = RewardTermCfg(
-        func=imitation_func,
-        weight=1.5 if use_imitation else 0.0,
-        params={
-            "data_path": str(ANGAD_WALKING_REFERENCE),
-            "dynamic_npz_path": str(Path(__file__).resolve().parents[2] / "Gaits" / "csvs" / "gait_cot_dynamic_no_sway.npz"),
-            "gait_frequency": 1.25,
-            "std": 0.5,
-            "command_name": "twist",
-            "command_threshold": 0.1,
-        },
-    )
+    # Pure RL Velocity Tracking: disable imitation reward term completely
+    cfg.rewards.pop("imitation", None)
 
     # Alternating feet contact reward for proper bipedal gait
     cfg.rewards["alternating_feet"] = RewardTermCfg(
@@ -254,7 +227,9 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     )
 
     if play:
-        cfg.scene.terrain = None
+        if cfg.scene.terrain is not None:
+            cfg.scene.terrain.terrain_type = "plane"
+            cfg.scene.terrain.terrain_generator = None
         cfg.episode_length_s = int(1e9)
         cfg.observations["policy"].enable_corruption = False
         cfg.events.pop("push_robot", None)
@@ -265,34 +240,33 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     return cfg
 
 
-def angad_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Angad flat terrain velocity tracking configuration."""
-    cfg = angad_rough_env_cfg(play=play)
+def unitree_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+    """Create Unitree G1 flat terrain velocity tracking configuration."""
+    cfg = unitree_rough_env_cfg(play=play)
 
     # Switch to flat terrain.
-    if not play:
-        assert cfg.scene.terrain is not None
-        cfg.scene.terrain.terrain_type = "plane"
-        cfg.scene.terrain.terrain_generator = None
+    assert cfg.scene.terrain is not None
+    cfg.scene.terrain.terrain_type = "plane"
+    cfg.scene.terrain.terrain_generator = None
 
-        # Disable terrain curriculum.
-        if cfg.curriculum is not None and "terrain_levels" in cfg.curriculum:
-            del cfg.curriculum["terrain_levels"]
+    # Disable terrain curriculum.
+    if cfg.curriculum is not None and "terrain_levels" in cfg.curriculum:
+        del cfg.curriculum["terrain_levels"]
 
     if play:
         commands = cfg.commands
         assert commands is not None
         twist_cmd = commands["twist"]
         assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-        twist_cmd.ranges.lin_vel_x = (-1.0, 1.5)
-        twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
+        twist_cmd.ranges.lin_vel_x = (-0.5, 1.5)
+        twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
 
     return cfg
 
 
-def angad_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Angad balance-only config."""
-    cfg = angad_flat_env_cfg(play=play)
+def unitree_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+    """Create Unitree G1 balance-only config."""
+    cfg = unitree_flat_env_cfg(play=play)
 
     assert cfg.commands is not None
     twist_cmd = cfg.commands["twist"]
@@ -309,3 +283,9 @@ def angad_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         cfg.curriculum.pop("command_vel", None)
 
     return cfg
+
+
+# Aliases for backward compatibility
+angad_rough_env_cfg = unitree_rough_env_cfg
+angad_flat_env_cfg = unitree_flat_env_cfg
+angad_balance_env_cfg = unitree_balance_env_cfg

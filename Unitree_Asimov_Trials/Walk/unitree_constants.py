@@ -13,8 +13,8 @@ from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.os import update_assets
 from mjlab.utils.spec_config import CollisionCfg
 
-# Resolves local Unitree G1 scene XML
-UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "scene.xml"
+# Resolves local Unitree G1 robot XML with primitive colliders (g1_mjx.xml)
+UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "g1_mjx.xml"
 if not UNITREE_G1_XML.exists():
     UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "g1.xml"
 
@@ -74,26 +74,57 @@ UNITREE_ACTUATOR_ANKLE_ROLL = BuiltinPositionActuatorCfg(
     effort_limit=50.0,
 )
 
-# Standing Keyframe Joint Angles
+# Standing Keyframe Joint Angles (Mild Squat)
 UNITREE_G1_STANDING_JOINTS = {
-    "left_hip_pitch_joint":    -0.20,
-    "left_hip_roll_joint":      0.00,
-    "left_hip_yaw_joint":       0.00,
-    "left_knee_joint":          0.42,
-    "left_ankle_pitch_joint":  -0.22,
-    "left_ankle_roll_joint":    0.00,
-    "right_hip_pitch_joint":   -0.20,
-    "right_hip_roll_joint":     0.00,
-    "right_hip_yaw_joint":      0.00,
-    "right_knee_joint":         0.42,
-    "right_ankle_pitch_joint": -0.22,
-    "right_ankle_roll_joint":   0.00,
+    "left_hip_pitch_joint":    -0.2203,
+    "left_hip_roll_joint":      0.0000,
+    "left_hip_yaw_joint":       0.0000,
+    "left_knee_joint":          0.5706,
+    "left_ankle_pitch_joint":  -0.3504,
+    "left_ankle_roll_joint":    0.0000,
+    "right_hip_pitch_joint":   -0.2203,
+    "right_hip_roll_joint":     0.0000,
+    "right_hip_yaw_joint":      0.0000,
+    "right_knee_joint":         0.5706,
+    "right_ankle_pitch_joint": -0.3504,
+    "right_ankle_roll_joint":   0.0000,
+    "waist_yaw_joint":          0.0000,
 }
 
 
 def get_unitree_spec() -> mujoco.MjSpec:
-    """Load Unitree G1 MjSpec from XML."""
-    return mujoco.MjSpec.from_file(str(UNITREE_G1_XML))
+    """Load Unitree G1 MjSpec from XML, strip pre-existing XML actuators & keyframes, and attach IMU sensors."""
+    spec = mujoco.MjSpec.from_file(str(UNITREE_G1_XML))
+    for actuator in list(spec.actuators):
+        spec.delete(actuator)
+    for keyframe in list(spec.keys):
+        spec.delete(keyframe)
+
+    spec.add_sensor(
+        name="imu_ang_vel",
+        type=mujoco.mjtSensor.mjSENS_GYRO,
+        objtype=mujoco.mjtObj.mjOBJ_SITE,
+        objname="imu_in_pelvis",
+    )
+    spec.add_sensor(
+        name="imu_lin_vel",
+        type=mujoco.mjtSensor.mjSENS_VELOCIMETER,
+        objtype=mujoco.mjtObj.mjOBJ_SITE,
+        objname="imu_in_pelvis",
+    )
+    spec.add_sensor(
+        name="imu_quat",
+        type=mujoco.mjtSensor.mjSENS_FRAMEQUAT,
+        objtype=mujoco.mjtObj.mjOBJ_SITE,
+        objname="imu_in_pelvis",
+    )
+    spec.add_sensor(
+        name="root_angmom",
+        type=mujoco.mjtSensor.mjSENS_SUBTREEANGMOM,
+        objtype=mujoco.mjtObj.mjOBJ_BODY,
+        objname="pelvis",
+    )
+    return spec
 
 
 UNITREE_G1_ARTICULATION = EntityArticulationInfoCfg(
@@ -108,9 +139,17 @@ UNITREE_G1_ARTICULATION = EntityArticulationInfoCfg(
 )
 
 
+UNITREE_G1_KEYFRAME = EntityCfg.InitialStateCfg(
+    pos=(0.0, 0.0, 0.7645),
+    joint_pos=UNITREE_G1_STANDING_JOINTS,
+    joint_vel={".*": 0.0},
+)
+
+
 def get_unitree_robot_cfg() -> EntityCfg:
     """Return EntityCfg for Unitree G1."""
     return EntityCfg(
+        init_state=UNITREE_G1_KEYFRAME,
         spec_fn=get_unitree_spec,
         articulation=UNITREE_G1_ARTICULATION,
     )

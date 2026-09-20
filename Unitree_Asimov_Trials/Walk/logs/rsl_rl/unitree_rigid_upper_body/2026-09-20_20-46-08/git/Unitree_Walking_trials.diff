@@ -1,0 +1,686 @@
+--- git commit ---
+daeed546c509154cc64dc7e7dd064d71a4dcde72
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   Unitree_Asimov_Trials/Walk/config/__init__.py
+	modified:   Unitree_Asimov_Trials/Walk/config/env_cfgs.py
+	modified:   Unitree_Asimov_Trials/Walk/config/rl_cfg.py
+	modified:   Unitree_Asimov_Trials/Walk/policy_evaluator.py
+	modified:   Unitree_Asimov_Trials/Walk/unitree_constants.py
+	modified:   xmls/unitree_g1/g1_mjx.xml
+	modified:   xmls/unitree_g1/scene_mjx.xml
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	Model_Evaluations/
+	Unitree_Asimov_Trials/Walk/logs/rsl_rl/test_mild_squat/
+	Unitree_Asimov_Trials/Walk/logs/rsl_rl/unitree_rigid_upper_body/
+	Unitree_Asimov_Trials/Walk/logs/rsl_rl/unitree_velocity_pure_rl/
+	Unitree_Asimov_Trials/Walk/logs/rsl_rl/zombie_walk/
+	Unitree_Utilities/
+	xmls/unitree_g1/scene_interactive_ik.xml
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/Unitree_Asimov_Trials/Walk/config/__init__.py b/Unitree_Asimov_Trials/Walk/config/__init__.py
+index d7cb06c..5dfacc3 100644
+--- a/Unitree_Asimov_Trials/Walk/config/__init__.py
++++ b/Unitree_Asimov_Trials/Walk/config/__init__.py
+@@ -3,29 +3,38 @@
+ from mjlab.tasks.registry import register_mjlab_task
+ from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
+ 
+-from .env_cfgs import angad_balance_env_cfg, angad_flat_env_cfg, angad_rough_env_cfg
++from .env_cfgs import unitree_rough_env_cfg, unitree_flat_env_cfg
+ from .rl_cfg import asimov_ppo_runner_cfg
+ 
+ register_mjlab_task(
+-    task_id="Mjlab-Velocity-Rough-Angad",
+-    env_cfg=angad_rough_env_cfg(),
+-    play_env_cfg=angad_rough_env_cfg(play=True),
++    task_id="Mjlab-Velocity-Rough-Unitree",
++    env_cfg=unitree_rough_env_cfg(),
++    play_env_cfg=unitree_rough_env_cfg(play=True),
+     rl_cfg=asimov_ppo_runner_cfg(),
+     runner_cls=VelocityOnPolicyRunner,
+ )
+ 
+ register_mjlab_task(
+-    task_id="Mjlab-Velocity-Flat-Angad",
+-    env_cfg=angad_flat_env_cfg(),
+-    play_env_cfg=angad_flat_env_cfg(play=True),
++    task_id="Mjlab-Velocity-Flat-Unitree",
++    env_cfg=unitree_flat_env_cfg(),
++    play_env_cfg=unitree_flat_env_cfg(play=True),
+     rl_cfg=asimov_ppo_runner_cfg(),
+     runner_cls=VelocityOnPolicyRunner,
+ )
+ 
++# Backward-compatibility aliases
+ register_mjlab_task(
+-    task_id="Mjlab-Balance-Angad",
+-    env_cfg=angad_balance_env_cfg(),
+-    play_env_cfg=angad_balance_env_cfg(play=True),
++    task_id="Mjlab-Velocity-Rough-Angad",
++    env_cfg=unitree_rough_env_cfg(),
++    play_env_cfg=unitree_rough_env_cfg(play=True),
++    rl_cfg=asimov_ppo_runner_cfg(),
++    runner_cls=VelocityOnPolicyRunner,
++)
++
++register_mjlab_task(
++    task_id="Mjlab-Velocity-Flat-Angad",
++    env_cfg=unitree_flat_env_cfg(),
++    play_env_cfg=unitree_flat_env_cfg(play=True),
+     rl_cfg=asimov_ppo_runner_cfg(),
+     runner_cls=VelocityOnPolicyRunner,
+ )
+diff --git a/Unitree_Asimov_Trials/Walk/config/env_cfgs.py b/Unitree_Asimov_Trials/Walk/config/env_cfgs.py
+index 24bd634..d514836 100644
+--- a/Unitree_Asimov_Trials/Walk/config/env_cfgs.py
++++ b/Unitree_Asimov_Trials/Walk/config/env_cfgs.py
+@@ -33,83 +33,69 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     cfg = make_velocity_env_cfg()
+     cfg.scene.num_envs = 4096 if not play else 1
+ 
+-    cfg.sim.nconmax = 150
+-    cfg.sim.njmax = 600
++    cfg.sim.nconmax = 100
++    cfg.sim.njmax = 400
+ 
+     robot_cfg = get_unitree_robot_cfg()
+     has_torso = any("torso" in name for a in robot_cfg.articulation.actuators for name in a.joint_names_expr)
+-    if play:
+-        from mjlab.utils.spec_config import CollisionCfg
+-        robot_cfg.collisions = (
+-            CollisionCfg(
+-                geom_names_expr=(r".*_foot_(primitive.*|cap_.*)", r".*_foot_link_geom.*", "floor"),
+-                contype={r".*_foot_(primitive.*|cap_.*)": 0, r".*_foot_link_geom.*": 0, "floor": 1},
+-                conaffinity={r".*_foot_(primitive.*|cap_.*)": 1, r".*_foot_link_geom.*": 1, "floor": 1},
+-                condim={r".*_foot_(primitive.*|cap_.*)": 3, r".*_foot_link_geom.*": 3, "floor": 3},
+-                priority={r".*_foot_(primitive.*|cap_.*)": 1, r".*_foot_link_geom.*": 1, "floor": 0},
+-                friction={r".*_foot_(primitive.*|cap_.*)": (2.5,), r".*_foot_link_geom.*": (2.5,), "floor": None},
+-            ),
+-        )
++    
++    from mjlab.utils.spec_config import CollisionCfg
++    robot_cfg.collisions = (
++        CollisionCfg(
++            geom_names_expr=("left_foot", "right_foot", "floor"),
++            contype={"left_foot": 0, "right_foot": 0, "floor": 1},
++            conaffinity={"left_foot": 1, "right_foot": 1, "floor": 1},
++            condim={"left_foot": 3, "right_foot": 3, "floor": 3},
++            priority={"left_foot": 1, "right_foot": 1, "floor": 0},
++            friction={"left_foot": (2.5,), "right_foot": (2.5,), "floor": None},
++        ),
++    )
+     cfg.scene.entities = {"robot": robot_cfg}
+ 
+-    # Angad feet sites
+-    site_names = ("left_foot_site", "right_foot_site")
+-    geom_names = (
+-        r".*left_foot_(primitive|link_geom|cap_.*).*",
+-        r".*right_foot_(primitive|link_geom|cap_.*).*",
+-    )
++    # Unitree G1 feet sites & geoms
++    site_names = ("left_foot", "right_foot")
++    geom_names = ("left_foot", "right_foot")
+ 
+     feet_ground_cfg = ContactSensorCfg(
+         name="feet_ground_contact",
+         primary=ContactMatch(
+             mode="subtree",
+-            pattern=r"^(left_foot_link|right_foot_link)$",
++            pattern=r"^(left_ankle_roll_link|right_ankle_roll_link)$",
+             entity="robot",
+         ),
+-        secondary=ContactMatch(mode="body", pattern="terrain") if not play else None,
++        secondary=ContactMatch(mode="geom", pattern="terrain", entity=None),
+         fields=("found", "force"),
+         reduce="netforce",
+         num_slots=1,
+         track_air_time=True,
+     )
+ 
+-    self_collision_cfg = ContactSensorCfg(
+-        name="self_collision",
+-        primary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
+-        secondary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
+-        fields=("found",),
+-        reduce="none",
+-        num_slots=1,
+-    )
+-
+-    cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg)
++    cfg.scene.sensors = (feet_ground_cfg,)
+ 
+     if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
+         cfg.scene.terrain.terrain_generator.curriculum = True
+ 
+     joint_pos_action = cfg.actions["joint_pos"]
+     assert isinstance(joint_pos_action, JointPositionActionCfg)
+-    joint_pos_action.scale = ANGAD_ACTION_SCALE
++    joint_pos_action.scale = UNITREE_ACTION_SCALE
+ 
+-    cfg.viewer.body_name = "base"
++    cfg.viewer.body_name = "pelvis"
+ 
+     assert cfg.commands is not None
+     twist_cmd = cfg.commands["twist"]
+     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
+-    twist_cmd.viz.z_offset = 0.9  # Angad is taller than Asimov
++    twist_cmd.viz.z_offset = 0.75
+ 
+-    twist_cmd.ranges.lin_vel_x = (-0.8, 2.5)  # Expanded to leverage the full dynamic gait range!
+-    twist_cmd.ranges.lin_vel_y = (-0.6, 0.6)
+-    twist_cmd.ranges.ang_vel_z = (-0.6, 0.6)
++    twist_cmd.ranges.lin_vel_x = (-0.5, 1.5)
++    twist_cmd.ranges.lin_vel_y = (-0.4, 0.4)
++    twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
+ 
+     # Remove base_lin_vel - not available on real robot IMU
+     del cfg.observations["policy"].terms["base_lin_vel"]
+     del cfg.observations["critic"].terms["base_lin_vel"]
+ 
+-
+-
+-    use_dynamic_gait = True  # Toggle this to True to train with the dynamic .npz anchors
+-    use_imitation = True     # Enabled for Method 7 (Dynamic Stride COT imitation)
++    use_dynamic_gait = False
++    use_imitation = False     # Pure RL velocity tracking (No imitation)
+     
+     if use_dynamic_gait:
+         imitation_func = imitation_dynamic_gait
+@@ -190,22 +176,23 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+         "asset_cfg"
+     ].site_names = site_names
+ 
+-    cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
++    cfg.events["foot_friction"].params["asset_cfg"].body_names = ("left_ankle_roll_link", "right_ankle_roll_link")
++    cfg.events["foot_friction"].params["asset_cfg"].geom_names = None
+ 
+     cfg.rewards["pose"].params["std_standing"] = {".*": 0.05}
+     cfg.rewards["pose"].params["std_walking"] = {
+-        r".*hip_pitch$": 0.5,
+-        r".*hip_roll$": 0.25,
+-        r".*hip_yaw$": 0.2,
+-        r".*knee_pitch$": 0.5,
+-        r".*ankle_pitch$": 0.2,
+-        r".*ankle_roll$": 0.12,
++        r".*hip_pitch.*": 0.5,
++        r".*hip_roll.*": 0.25,
++        r".*hip_yaw.*": 0.2,
++        r".*knee.*": 0.5,
++        r".*ankle_pitch.*": 0.2,
++        r".*ankle_roll.*": 0.12,
++        r".*waist.*": 0.10,
+     }
+-    if has_torso:
+-        cfg.rewards["pose"].params["std_walking"][r".*torso_yaw$"] = 0.35
++    cfg.rewards["pose"].params["std_running"] = cfg.rewards["pose"].params["std_walking"]
+ 
+-    cfg.rewards["upright"].params["asset_cfg"].body_names = ("base",)
+-    cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("base",)
++    cfg.rewards["upright"].params["asset_cfg"].body_names = ("pelvis",)
++    cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("pelvis",)
+ 
+     for reward_name in ["foot_clearance", "foot_swing_height", "foot_slip"]:
+         cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
+@@ -219,27 +206,13 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     cfg.rewards["soft_landing"].weight = -1e-5
+     cfg.rewards["action_rate_l2"].weight = -0.1
+ 
+-    cfg.rewards["self_collisions"] = RewardTermCfg(
+-        func=self_collision_cost,
+-        weight=-1.0,
+-        params={"sensor_name": self_collision_cfg.name},
+-    )
++    # Foot-only ground collisions active (self-collisions removed for max speed)
++    cfg.rewards.pop("self_collisions", None)
+ 
+ 
+ 
+-    # Imitation reward for walking reference motion (weight set to 0.0 if disabled)
+-    cfg.rewards["imitation"] = RewardTermCfg(
+-        func=imitation_func,
+-        weight=1.5 if use_imitation else 0.0,
+-        params={
+-            "data_path": str(ANGAD_WALKING_REFERENCE),
+-            "dynamic_npz_path": str(Path(__file__).resolve().parents[2] / "Gaits" / "csvs" / "gait_cot_dynamic_no_sway.npz"),
+-            "gait_frequency": 1.25,
+-            "std": 0.5,
+-            "command_name": "twist",
+-            "command_threshold": 0.1,
+-        },
+-    )
++    # Pure RL Velocity Tracking: disable imitation reward term completely
++    cfg.rewards.pop("imitation", None)
+ 
+     # Alternating feet contact reward for proper bipedal gait
+     cfg.rewards["alternating_feet"] = RewardTermCfg(
+@@ -254,7 +227,9 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     )
+ 
+     if play:
+-        cfg.scene.terrain = None
++        if cfg.scene.terrain is not None:
++            cfg.scene.terrain.terrain_type = "plane"
++            cfg.scene.terrain.terrain_generator = None
+         cfg.episode_length_s = int(1e9)
+         cfg.observations["policy"].enable_corruption = False
+         cfg.events.pop("push_robot", None)
+@@ -265,34 +240,33 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     return cfg
+ 
+ 
+-def angad_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+-    """Create Angad flat terrain velocity tracking configuration."""
+-    cfg = angad_rough_env_cfg(play=play)
++def unitree_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
++    """Create Unitree G1 flat terrain velocity tracking configuration."""
++    cfg = unitree_rough_env_cfg(play=play)
+ 
+     # Switch to flat terrain.
+-    if not play:
+-        assert cfg.scene.terrain is not None
+-        cfg.scene.terrain.terrain_type = "plane"
+-        cfg.scene.terrain.terrain_generator = None
++    assert cfg.scene.terrain is not None
++    cfg.scene.terrain.terrain_type = "plane"
++    cfg.scene.terrain.terrain_generator = None
+ 
+-        # Disable terrain curriculum.
+-        if cfg.curriculum is not None and "terrain_levels" in cfg.curriculum:
+-            del cfg.curriculum["terrain_levels"]
++    # Disable terrain curriculum.
++    if cfg.curriculum is not None and "terrain_levels" in cfg.curriculum:
++        del cfg.curriculum["terrain_levels"]
+ 
+     if play:
+         commands = cfg.commands
+         assert commands is not None
+         twist_cmd = commands["twist"]
+         assert isinstance(twist_cmd, UniformVelocityCommandCfg)
+-        twist_cmd.ranges.lin_vel_x = (-1.0, 1.5)
+-        twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
++        twist_cmd.ranges.lin_vel_x = (-0.5, 1.5)
++        twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
+ 
+     return cfg
+ 
+ 
+-def angad_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+-    """Create Angad balance-only config."""
+-    cfg = angad_flat_env_cfg(play=play)
++def unitree_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
++    """Create Unitree G1 balance-only config."""
++    cfg = unitree_flat_env_cfg(play=play)
+ 
+     assert cfg.commands is not None
+     twist_cmd = cfg.commands["twist"]
+@@ -309,3 +283,9 @@ def angad_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+         cfg.curriculum.pop("command_vel", None)
+ 
+     return cfg
++
++
++# Aliases for backward compatibility
++angad_rough_env_cfg = unitree_rough_env_cfg
++angad_flat_env_cfg = unitree_flat_env_cfg
++angad_balance_env_cfg = unitree_balance_env_cfg
+diff --git a/Unitree_Asimov_Trials/Walk/config/rl_cfg.py b/Unitree_Asimov_Trials/Walk/config/rl_cfg.py
+index e0f67d9..f3cd10a 100644
+--- a/Unitree_Asimov_Trials/Walk/config/rl_cfg.py
++++ b/Unitree_Asimov_Trials/Walk/config/rl_cfg.py
+@@ -11,7 +11,7 @@ def asimov_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+     """Create RL runner configuration for Asimov velocity task."""
+     return RslRlOnPolicyRunnerCfg(
+         policy=RslRlPpoActorCriticCfg(
+-            init_noise_std=1.0,
++            init_noise_std=0.5,
+             actor_obs_normalization=True,
+             critic_obs_normalization=True,
+             actor_hidden_dims=(256, 256, 128),  # Smaller network for 12-DOF robot
+@@ -32,7 +32,8 @@ def asimov_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+             desired_kl=0.01,
+             max_grad_norm=1.0,
+         ),
+-        experiment_name="angad_velocity",
++        experiment_name="unitree_velocity",
++        logger="tensorboard",
+         save_interval=50,
+         num_steps_per_env=24,
+         max_iterations=30_000,
+diff --git a/Unitree_Asimov_Trials/Walk/policy_evaluator.py b/Unitree_Asimov_Trials/Walk/policy_evaluator.py
+index f744858..3f88f7e 100644
+--- a/Unitree_Asimov_Trials/Walk/policy_evaluator.py
++++ b/Unitree_Asimov_Trials/Walk/policy_evaluator.py
+@@ -181,11 +181,11 @@ def main():
+     torch.manual_seed(42)
+     np.random.seed(42)
+ 
+-    # Fix contact sensor secondary pattern to detect contact with floor
++    # Fix contact sensor secondary pattern to detect contact with terrain
+     from mjlab.sensor.contact_sensor import ContactMatch
+     for s_cfg in env_cfg.scene.sensors:
+         if s_cfg.name == "feet_ground_contact":
+-            s_cfg.secondary = ContactMatch(mode="geom", pattern="floor", entity="robot")
++            s_cfg.secondary = ContactMatch(mode="body", pattern="terrain")
+ 
+     # Initialize environment
+     device = "cuda:0" if torch.cuda.is_available() else "cpu"
+@@ -361,8 +361,8 @@ def main():
+         left_contact = left_fz > contact_threshold
+         right_contact = right_fz > contact_threshold
+ 
+-        left_site_idx = robot.find_sites("left_foot_site")[0][0]
+-        right_site_idx = robot.find_sites("right_foot_site")[0][0]
++        left_site_idx = robot.find_sites("left_foot")[0][0]
++        right_site_idx = robot.find_sites("right_foot")[0][0]
+         left_foot_pos = robot.data.site_pos_w[0, left_site_idx].cpu().numpy()
+         right_foot_pos = robot.data.site_pos_w[0, right_site_idx].cpu().numpy()
+ 
+diff --git a/Unitree_Asimov_Trials/Walk/unitree_constants.py b/Unitree_Asimov_Trials/Walk/unitree_constants.py
+index e0e909f..0fc9abb 100644
+--- a/Unitree_Asimov_Trials/Walk/unitree_constants.py
++++ b/Unitree_Asimov_Trials/Walk/unitree_constants.py
+@@ -13,8 +13,8 @@ from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
+ from mjlab.utils.os import update_assets
+ from mjlab.utils.spec_config import CollisionCfg
+ 
+-# Resolves local Unitree G1 scene XML
+-UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "scene.xml"
++# Resolves local Unitree G1 robot XML with primitive colliders (g1_mjx.xml)
++UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "g1_mjx.xml"
+ if not UNITREE_G1_XML.exists():
+     UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "g1.xml"
+ 
+@@ -74,26 +74,57 @@ UNITREE_ACTUATOR_ANKLE_ROLL = BuiltinPositionActuatorCfg(
+     effort_limit=50.0,
+ )
+ 
+-# Standing Keyframe Joint Angles
++# Standing Keyframe Joint Angles (Mild Squat)
+ UNITREE_G1_STANDING_JOINTS = {
+-    "left_hip_pitch_joint":    -0.20,
+-    "left_hip_roll_joint":      0.00,
+-    "left_hip_yaw_joint":       0.00,
+-    "left_knee_joint":          0.42,
+-    "left_ankle_pitch_joint":  -0.22,
+-    "left_ankle_roll_joint":    0.00,
+-    "right_hip_pitch_joint":   -0.20,
+-    "right_hip_roll_joint":     0.00,
+-    "right_hip_yaw_joint":      0.00,
+-    "right_knee_joint":         0.42,
+-    "right_ankle_pitch_joint": -0.22,
+-    "right_ankle_roll_joint":   0.00,
++    "left_hip_pitch_joint":    -0.2203,
++    "left_hip_roll_joint":      0.0000,
++    "left_hip_yaw_joint":       0.0000,
++    "left_knee_joint":          0.5706,
++    "left_ankle_pitch_joint":  -0.3504,
++    "left_ankle_roll_joint":    0.0000,
++    "right_hip_pitch_joint":   -0.2203,
++    "right_hip_roll_joint":     0.0000,
++    "right_hip_yaw_joint":      0.0000,
++    "right_knee_joint":         0.5706,
++    "right_ankle_pitch_joint": -0.3504,
++    "right_ankle_roll_joint":   0.0000,
++    "waist_yaw_joint":          0.0000,
+ }
+ 
+ 
+ def get_unitree_spec() -> mujoco.MjSpec:
+-    """Load Unitree G1 MjSpec from XML."""
+-    return mujoco.MjSpec.from_file(str(UNITREE_G1_XML))
++    """Load Unitree G1 MjSpec from XML, strip pre-existing XML actuators & keyframes, and attach IMU sensors."""
++    spec = mujoco.MjSpec.from_file(str(UNITREE_G1_XML))
++    for actuator in list(spec.actuators):
++        spec.delete(actuator)
++    for keyframe in list(spec.keys):
++        spec.delete(keyframe)
++
++    spec.add_sensor(
++        name="imu_ang_vel",
++        type=mujoco.mjtSensor.mjSENS_GYRO,
++        objtype=mujoco.mjtObj.mjOBJ_SITE,
++        objname="imu_in_pelvis",
++    )
++    spec.add_sensor(
++        name="imu_lin_vel",
++        type=mujoco.mjtSensor.mjSENS_VELOCIMETER,
++        objtype=mujoco.mjtObj.mjOBJ_SITE,
++        objname="imu_in_pelvis",
++    )
++    spec.add_sensor(
++        name="imu_quat",
++        type=mujoco.mjtSensor.mjSENS_FRAMEQUAT,
++        objtype=mujoco.mjtObj.mjOBJ_SITE,
++        objname="imu_in_pelvis",
++    )
++    spec.add_sensor(
++        name="root_angmom",
++        type=mujoco.mjtSensor.mjSENS_SUBTREEANGMOM,
++        objtype=mujoco.mjtObj.mjOBJ_BODY,
++        objname="pelvis",
++    )
++    return spec
+ 
+ 
+ UNITREE_G1_ARTICULATION = EntityArticulationInfoCfg(
+@@ -108,9 +139,17 @@ UNITREE_G1_ARTICULATION = EntityArticulationInfoCfg(
+ )
+ 
+ 
++UNITREE_G1_KEYFRAME = EntityCfg.InitialStateCfg(
++    pos=(0.0, 0.0, 0.7645),
++    joint_pos=UNITREE_G1_STANDING_JOINTS,
++    joint_vel={".*": 0.0},
++)
++
++
+ def get_unitree_robot_cfg() -> EntityCfg:
+     """Return EntityCfg for Unitree G1."""
+     return EntityCfg(
++        init_state=UNITREE_G1_KEYFRAME,
+         spec_fn=get_unitree_spec,
+         articulation=UNITREE_G1_ARTICULATION,
+     )
+diff --git a/xmls/unitree_g1/g1_mjx.xml b/xmls/unitree_g1/g1_mjx.xml
+index 74e358d..5a436ba 100644
+--- a/xmls/unitree_g1/g1_mjx.xml
++++ b/xmls/unitree_g1/g1_mjx.xml
+@@ -143,6 +143,7 @@
+       <geom class="visual" mesh="pelvis_contour_link"/>
+       <geom name="pelvis_collision" class="collision" type="sphere" size="0.07" pos="0 0 -0.08"/>
+       <site name="imu_in_pelvis" size="0.01" pos="0.04525 0 -0.08339"/>
++      <site name="base_site" size="0.01" pos="0 0 0"/>
+       <body name="left_hip_pitch_link" pos="0 0.064452 -0.1027">
+         <inertial pos="0.002741 0.047791 -0.02606" quat="0.954862 0.293964 0.0302556 0.030122" mass="1.35"
+           diaginertia="0.00181517 0.00153422 0.00116212"/>
+@@ -242,12 +243,10 @@
+         <geom class="visual" mesh="waist_yaw_link"/>
+         <body name="waist_roll_link" pos="-0.0039635 0 0.044">
+           <inertial pos="0 2.3e-05 0" quat="0.5 0.5 -0.5 0.5" mass="0.086" diaginertia="8.245e-06 7.079e-06 6.339e-06"/>
+-          <joint name="waist_roll_joint" class="waist_roll"/>
+           <geom class="visual" mesh="waist_roll_link"/>
+           <body name="torso_link">
+             <inertial pos="0.00203158 0.000339683 0.184568" quat="0.999803 -6.03319e-05 0.0198256 0.00131986"
+               mass="7.818" diaginertia="0.121847 0.109825 0.0273735"/>
+-            <joint name="waist_pitch_joint" class="waist_pitch"/>
+             <geom class="visual" mesh="torso_link"/>
+             <geom pos="0.0039635 0 -0.044" quat="1 0 0 0" class="visual" material="black" mesh="logo_link"/>
+             <geom pos="0.0039635 0 -0.044" class="visual" material="black" mesh="head_link"/>
+@@ -258,41 +257,34 @@
+               quat="0.990264 0.139201 1.38722e-05 -9.86868e-05">
+               <inertial pos="0 0.035892 -0.011628" quat="0.654152 0.0130458 -0.326267 0.68225" mass="0.718"
+                 diaginertia="0.000465864 0.000432842 0.000406394"/>
+-              <joint name="left_shoulder_pitch_joint" class="shoulder_pitch"/>
+               <geom class="visual" mesh="left_shoulder_pitch_link"/>
+               <body name="left_shoulder_roll_link" pos="0 0.038 -0.013831" quat="0.990268 -0.139172 0 0">
+                 <inertial pos="-0.000227 0.00727 -0.063243" quat="0.701256 -0.0196223 -0.00710317 0.712604" mass="0.643"
+                   diaginertia="0.000691311 0.000618011 0.000388977"/>
+-                <joint name="left_shoulder_roll_joint" range="-1.5882 2.2515" class="shoulder_roll"/>
+                 <geom class="visual" mesh="left_shoulder_roll_link"/>
+                 <body name="left_shoulder_yaw_link" pos="0 0.00624 -0.1032">
+                   <inertial pos="0.010773 -0.002949 -0.072009" quat="0.716879 -0.0964829 -0.0679942 0.687134"
+                     mass="0.734" diaginertia="0.00106187 0.00103217 0.000400661"/>
+-                  <joint name="left_shoulder_yaw_joint" class="shoulder_yaw"/>
+                   <geom class="visual" mesh="left_shoulder_yaw_link"/>
+                   <geom name="left_shoulder_yaw_collision" class="collision" size="0.035" fromto="0 0 -0.08 0 0 0.05"/>
+                   <body name="left_elbow_link" pos="0.015783 0 -0.080518">
+                     <inertial pos="0.064956 0.004454 -0.010062" quat="0.541765 0.636132 0.388821 0.388129" mass="0.6"
+                       diaginertia="0.000443035 0.000421612 0.000259353"/>
+-                    <joint name="left_elbow_joint" class="elbow"/>
+                     <geom class="visual" mesh="left_elbow_link"/>
+                     <geom name="left_elbow_yaw_collision" class="collision" size="0.035"
+                       fromto="-0.01 0 -0.01 0.08 0 -0.01"/>
+                     <body name="left_wrist_roll_link" pos="0.1 0.00188791 -0.01">
+                       <inertial pos="0.0171394 0.000537591 4.8864e-07" quat="0.575338 0.411667 -0.574906 0.411094"
+                         mass="0.085445" diaginertia="5.48211e-05 4.96646e-05 3.57798e-05"/>
+-                      <joint name="left_wrist_roll_joint" class="wrist_roll"/>
+                       <geom class="visual" mesh="left_wrist_roll_link"/>
+                       <body name="left_wrist_pitch_link" pos="0.038 0 0">
+                         <inertial pos="0.0229999 -0.00111685 -0.00111658" quat="0.249998 0.661363 0.293036 0.643608"
+                           mass="0.48405" diaginertia="0.000430353 0.000429873 0.000164648"/>
+-                        <joint name="left_wrist_pitch_joint" class="wrist_pitch"/>
+                         <geom class="visual" mesh="left_wrist_pitch_link"/>
+                         <geom name="left_wrist_collision" class="collision" size="0.035" fromto="-0.01 0 0 0.06 0 0"/>
+                         <body name="left_wrist_yaw_link" pos="0.046 0 0">
+                           <inertial pos="0.0708244 0.000191745 0.00161742" quat="0.510571 0.526295 0.468078 0.493188"
+                             mass="0.254576" diaginertia="0.000646113 0.000559993 0.000147566"/>
+-                          <joint name="left_wrist_yaw_joint" class="wrist_yaw"/>
+                           <geom class="visual" mesh="left_wrist_yaw_link"/>
+                           <geom pos="0.0415 0.003 0" quat="1 0 0 0" class="visual" mesh="left_rubber_hand"/>
+                           <site name="left_palm" pos="0.08 0 0" size="0.01"/>
+@@ -309,41 +301,34 @@
+               quat="0.990264 -0.139201 1.38722e-05 9.86868e-05">
+               <inertial pos="0 -0.035892 -0.011628" quat="0.68225 -0.326267 0.0130458 0.654152" mass="0.718"
+                 diaginertia="0.000465864 0.000432842 0.000406394"/>
+-              <joint name="right_shoulder_pitch_joint" class="shoulder_pitch"/>
+               <geom class="visual" mesh="right_shoulder_pitch_link"/>
+               <body name="right_shoulder_roll_link" pos="0 -0.038 -0.013831" quat="0.990268 0.139172 0 0">
+                 <inertial pos="-0.000227 -0.00727 -0.063243" quat="0.712604 -0.00710317 -0.0196223 0.701256"
+                   mass="0.643" diaginertia="0.000691311 0.000618011 0.000388977"/>
+-                <joint name="right_shoulder_roll_joint" range="-2.2515 1.5882" class="shoulder_roll"/>
+                 <geom class="visual" mesh="right_shoulder_roll_link"/>
+                 <body name="right_shoulder_yaw_link" pos="0 -0.00624 -0.1032">
+                   <inertial pos="0.010773 0.002949 -0.072009" quat="0.687134 -0.0679942 -0.0964829 0.716879"
+                     mass="0.734" diaginertia="0.00106187 0.00103217 0.000400661"/>
+-                  <joint name="right_shoulder_yaw_joint" class="shoulder_yaw"/>
+                   <geom class="visual" mesh="right_shoulder_yaw_link"/>
+                   <geom name="right_shoulder_yaw_collision" class="collision" size="0.035" fromto="0 0 -0.08 0 0 0.05"/>
+                   <body name="right_elbow_link" pos="0.015783 0 -0.080518">
+                     <inertial pos="0.064956 -0.004454 -0.010062" quat="0.388129 0.388821 0.636132 0.541765" mass="0.6"
+                       diaginertia="0.000443035 0.000421612 0.000259353"/>
+-                    <joint name="right_elbow_joint" class="elbow"/>
+                     <geom class="visual" mesh="right_elbow_link"/>
+                     <geom name="right_elbow_yaw_collision" class="collision" size="0.035"
+                       fromto="-0.01 0 -0.01 0.08 0 -0.01"/>
+                     <body name="right_wrist_roll_link" pos="0.1 -0.00188791 -0.01">
+                       <inertial pos="0.0171394 -0.000537591 4.8864e-07" quat="0.411667 0.575338 -0.411094 0.574906"
+                         mass="0.085445" diaginertia="5.48211e-05 4.96646e-05 3.57798e-05"/>
+-                      <joint name="right_wrist_roll_joint" class="wrist_roll"/>
+                       <geom class="visual" mesh="right_wrist_roll_link"/>
+                       <body name="right_wrist_pitch_link" pos="0.038 0 0">
+                         <inertial pos="0.0229999 0.00111685 -0.00111658" quat="0.643608 0.293036 0.661363 0.249998"
+                           mass="0.48405" diaginertia="0.000430353 0.000429873 0.000164648"/>
+-                        <joint name="right_wrist_pitch_joint" class="wrist_pitch"/>
+                         <geom class="visual" mesh="right_wrist_pitch_link"/>
+                         <geom name="right_wrist_collision" class="collision" size="0.035" fromto="-0.01 0 0 0.06 0 0"/>
+                         <body name="right_wrist_yaw_link" pos="0.046 0 0">
+                           <inertial pos="0.0708244 -0.000191745 0.00161742" quat="0.493188 0.468078 0.526295 0.510571"
+                             mass="0.254576" diaginertia="0.000646113 0.000559993 0.000147566"/>
+-                          <joint name="right_wrist_yaw_joint" class="wrist_yaw"/>
+                           <geom class="visual" mesh="right_wrist_yaw_link"/>
+                           <geom pos="0.0415 -0.003 0" quat="1 0 0 0" class="visual" mesh="right_rubber_hand"/>
+                           <site name="right_palm" pos="0.08 0 0" size="0.01"/>
+@@ -378,24 +363,6 @@
+     <position class="ankle_roll" name="right_ankle_roll_joint" joint="right_ankle_roll_joint"/>
+ 
+     <position class="waist_yaw" name="waist_yaw_joint" joint="waist_yaw_joint"/>
+-    <position class="waist_roll" name="waist_roll_joint" joint="waist_roll_joint"/>
+-    <position class="waist_pitch" name="waist_pitch_joint" joint="waist_pitch_joint"/>
+-
+-    <position class="shoulder_pitch" name="left_shoulder_pitch_joint" joint="left_shoulder_pitch_joint"/>
+-    <position class="shoulder_roll" name="left_shoulder_roll_joint" joint="left_shoulder_roll_joint"/>
+-    <position class="shoulder_yaw" name="left_shoulder_yaw_joint" joint="left_shoulder_yaw_joint"/>
+-    <position class="elbow" name="left_elbow_joint" joint="left_elbow_joint"/>
+-    <position class="wrist_roll" name="left_wrist_roll_joint" joint="left_wrist_roll_joint"/>
+-    <position class="wrist_pitch" name="left_wrist_pitch_joint" joint="left_wrist_pitch_joint"/>
+-    <position class="wrist_yaw" name="left_wrist_yaw_joint" joint="left_wrist_yaw_joint"/>
+-
+-    <position class="shoulder_pitch" name="right_shoulder_pitch_joint" joint="right_shoulder_pitch_joint"/>
+-    <position class="shoulder_roll" name="right_shoulder_roll_joint" joint="right_shoulder_roll_joint"/>
+-    <position class="shoulder_yaw" name="right_shoulder_yaw_joint" joint="right_shoulder_yaw_joint"/>
+-    <position class="elbow" name="right_elbow_joint" joint="right_elbow_joint"/>
+-    <position class="wrist_roll" name="right_wrist_roll_joint" joint="right_wrist_roll_joint"/>
+-    <position class="wrist_pitch" name="right_wrist_pitch_joint" joint="right_wrist_pitch_joint"/>
+-    <position class="wrist_yaw" name="right_wrist_yaw_joint" joint="right_wrist_yaw_joint"/>
+   </actuator>
+ 
+   <sensor>
+diff --git a/xmls/unitree_g1/scene_mjx.xml b/xmls/unitree_g1/scene_mjx.xml
+index a9ecf1d..961b5f4 100644
+--- a/xmls/unitree_g1/scene_mjx.xml
++++ b/xmls/unitree_g1/scene_mjx.xml
+@@ -114,16 +114,12 @@
+       1 0 0 0
+       -0.1 0 0 0.3 -0.2 0
+       -0.1 0 0 0.3 -0.2 0
+-      0 0 0
+-      0.2 0.2 0 1.28 0 0 0
+-      0.2 -0.2 0 1.28 0 0 0
++      0
+       "
+       ctrl="
+       -0.1 0 0 0.3 -0.2 0
+       -0.1 0 0 0.3 -0.2 0
+-      0 0 0
+-      0.2 0.2 0 1.28 0 0 0
+-      0.2 -0.2 0 1.28 0 0 0
++      0
+       "/>
+     <key name="knees_bent"
+       qpos="
+@@ -131,16 +127,24 @@
+       1 0 0 0
+       -0.312 0 0 0.669 -0.363 0
+       -0.312 0 0 0.669 -0.363 0
+-      0 0 0.073
+-      0.2 0.22 0 1 0 0 0
+-      0.2 -0.22 0 1 0 0 0
++      0
+       "
+       ctrl="
+       -0.312 0 0 0.669 -0.363 0
+       -0.312 0 0 0.669 -0.363 0
+-      0 0 0.073
+-      0.2 0.22 0 1 0 0 0
+-      0.2 -0.22 0 1 0 0 0
+-    "/>
++      0
++      "/>
++    <key name="mild_squat"
++      qpos="
++      0.003408   -0.000000   0.764522
++      1.000000   -0.000000   -0.000011   -0.000000
++      -0.220251  0.000002  -0.000001  0.570629  -0.350372  -0.000003
++      -0.220251  -0.000002  0.000001  0.570629  -0.350372  0.000003
++      0.000000
++      " ctrl="
++      -0.220251  0.000002  -0.000001  0.570629  -0.350372  -0.000003
++      -0.220251  -0.000002  0.000001  0.570629  -0.350372  0.000003
++      0.000000
++      "/>
+   </keyframe>
+ </mujoco>

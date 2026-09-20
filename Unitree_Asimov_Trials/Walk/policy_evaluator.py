@@ -181,11 +181,11 @@ def main():
     torch.manual_seed(42)
     np.random.seed(42)
 
-    # Fix contact sensor secondary pattern to detect contact with floor
+    # Fix contact sensor secondary pattern to detect contact with terrain
     from mjlab.sensor.contact_sensor import ContactMatch
     for s_cfg in env_cfg.scene.sensors:
         if s_cfg.name == "feet_ground_contact":
-            s_cfg.secondary = ContactMatch(mode="geom", pattern="floor", entity="robot")
+            s_cfg.secondary = ContactMatch(mode="body", pattern="terrain")
 
     # Initialize environment
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -361,8 +361,8 @@ def main():
         left_contact = left_fz > contact_threshold
         right_contact = right_fz > contact_threshold
 
-        left_site_idx = robot.find_sites("left_foot_site")[0][0]
-        right_site_idx = robot.find_sites("right_foot_site")[0][0]
+        left_site_idx = robot.find_sites("left_foot")[0][0]
+        right_site_idx = robot.find_sites("right_foot")[0][0]
         left_foot_pos = robot.data.site_pos_w[0, left_site_idx].cpu().numpy()
         right_foot_pos = robot.data.site_pos_w[0, right_site_idx].cpu().numpy()
 

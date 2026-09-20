@@ -1,0 +1,337 @@
+--- git commit ---
+daeed546c509154cc64dc7e7dd064d71a4dcde72
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   Unitree_Asimov_Trials/Walk/config/__init__.py
+	modified:   Unitree_Asimov_Trials/Walk/config/env_cfgs.py
+	modified:   Unitree_Asimov_Trials/Walk/config/rl_cfg.py
+	modified:   Unitree_Asimov_Trials/Walk/unitree_constants.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	Unitree_Asimov_Trials/Walk/logs/rsl_rl/unitree_velocity_pure_rl/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/Unitree_Asimov_Trials/Walk/config/__init__.py b/Unitree_Asimov_Trials/Walk/config/__init__.py
+index d7cb06c..5dfacc3 100644
+--- a/Unitree_Asimov_Trials/Walk/config/__init__.py
++++ b/Unitree_Asimov_Trials/Walk/config/__init__.py
+@@ -3,29 +3,38 @@
+ from mjlab.tasks.registry import register_mjlab_task
+ from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
+ 
+-from .env_cfgs import angad_balance_env_cfg, angad_flat_env_cfg, angad_rough_env_cfg
++from .env_cfgs import unitree_rough_env_cfg, unitree_flat_env_cfg
+ from .rl_cfg import asimov_ppo_runner_cfg
+ 
+ register_mjlab_task(
+-    task_id="Mjlab-Velocity-Rough-Angad",
+-    env_cfg=angad_rough_env_cfg(),
+-    play_env_cfg=angad_rough_env_cfg(play=True),
++    task_id="Mjlab-Velocity-Rough-Unitree",
++    env_cfg=unitree_rough_env_cfg(),
++    play_env_cfg=unitree_rough_env_cfg(play=True),
+     rl_cfg=asimov_ppo_runner_cfg(),
+     runner_cls=VelocityOnPolicyRunner,
+ )
+ 
+ register_mjlab_task(
+-    task_id="Mjlab-Velocity-Flat-Angad",
+-    env_cfg=angad_flat_env_cfg(),
+-    play_env_cfg=angad_flat_env_cfg(play=True),
++    task_id="Mjlab-Velocity-Flat-Unitree",
++    env_cfg=unitree_flat_env_cfg(),
++    play_env_cfg=unitree_flat_env_cfg(play=True),
+     rl_cfg=asimov_ppo_runner_cfg(),
+     runner_cls=VelocityOnPolicyRunner,
+ )
+ 
++# Backward-compatibility aliases
+ register_mjlab_task(
+-    task_id="Mjlab-Balance-Angad",
+-    env_cfg=angad_balance_env_cfg(),
+-    play_env_cfg=angad_balance_env_cfg(play=True),
++    task_id="Mjlab-Velocity-Rough-Angad",
++    env_cfg=unitree_rough_env_cfg(),
++    play_env_cfg=unitree_rough_env_cfg(play=True),
++    rl_cfg=asimov_ppo_runner_cfg(),
++    runner_cls=VelocityOnPolicyRunner,
++)
++
++register_mjlab_task(
++    task_id="Mjlab-Velocity-Flat-Angad",
++    env_cfg=unitree_flat_env_cfg(),
++    play_env_cfg=unitree_flat_env_cfg(play=True),
+     rl_cfg=asimov_ppo_runner_cfg(),
+     runner_cls=VelocityOnPolicyRunner,
+ )
+diff --git a/Unitree_Asimov_Trials/Walk/config/env_cfgs.py b/Unitree_Asimov_Trials/Walk/config/env_cfgs.py
+index 24bd634..32e97c5 100644
+--- a/Unitree_Asimov_Trials/Walk/config/env_cfgs.py
++++ b/Unitree_Asimov_Trials/Walk/config/env_cfgs.py
+@@ -31,7 +31,7 @@ from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
+ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     """Create Unitree G1 rough terrain velocity tracking configuration."""
+     cfg = make_velocity_env_cfg()
+-    cfg.scene.num_envs = 4096 if not play else 1
++    cfg.scene.num_envs = 1024 if not play else 1
+ 
+     cfg.sim.nconmax = 150
+     cfg.sim.njmax = 600
+@@ -52,18 +52,15 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+         )
+     cfg.scene.entities = {"robot": robot_cfg}
+ 
+-    # Angad feet sites
+-    site_names = ("left_foot_site", "right_foot_site")
+-    geom_names = (
+-        r".*left_foot_(primitive|link_geom|cap_.*).*",
+-        r".*right_foot_(primitive|link_geom|cap_.*).*",
+-    )
++    # Unitree G1 feet sites & geoms
++    site_names = ("left_foot", "right_foot")
++    geom_names = ("left_foot", "right_foot")
+ 
+     feet_ground_cfg = ContactSensorCfg(
+         name="feet_ground_contact",
+         primary=ContactMatch(
+             mode="subtree",
+-            pattern=r"^(left_foot_link|right_foot_link)$",
++            pattern=r"^(left_ankle_roll_link|right_ankle_roll_link)$",
+             entity="robot",
+         ),
+         secondary=ContactMatch(mode="body", pattern="terrain") if not play else None,
+@@ -75,8 +72,8 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+ 
+     self_collision_cfg = ContactSensorCfg(
+         name="self_collision",
+-        primary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
+-        secondary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
++        primary=ContactMatch(mode="subtree", pattern="pelvis", entity="robot"),
++        secondary=ContactMatch(mode="subtree", pattern="pelvis", entity="robot"),
+         fields=("found",),
+         reduce="none",
+         num_slots=1,
+@@ -89,27 +86,25 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+ 
+     joint_pos_action = cfg.actions["joint_pos"]
+     assert isinstance(joint_pos_action, JointPositionActionCfg)
+-    joint_pos_action.scale = ANGAD_ACTION_SCALE
++    joint_pos_action.scale = UNITREE_ACTION_SCALE
+ 
+-    cfg.viewer.body_name = "base"
++    cfg.viewer.body_name = "pelvis"
+ 
+     assert cfg.commands is not None
+     twist_cmd = cfg.commands["twist"]
+     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
+-    twist_cmd.viz.z_offset = 0.9  # Angad is taller than Asimov
++    twist_cmd.viz.z_offset = 0.75
+ 
+-    twist_cmd.ranges.lin_vel_x = (-0.8, 2.5)  # Expanded to leverage the full dynamic gait range!
+-    twist_cmd.ranges.lin_vel_y = (-0.6, 0.6)
+-    twist_cmd.ranges.ang_vel_z = (-0.6, 0.6)
++    twist_cmd.ranges.lin_vel_x = (-0.5, 1.5)
++    twist_cmd.ranges.lin_vel_y = (-0.4, 0.4)
++    twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
+ 
+     # Remove base_lin_vel - not available on real robot IMU
+     del cfg.observations["policy"].terms["base_lin_vel"]
+     del cfg.observations["critic"].terms["base_lin_vel"]
+ 
+-
+-
+-    use_dynamic_gait = True  # Toggle this to True to train with the dynamic .npz anchors
+-    use_imitation = True     # Enabled for Method 7 (Dynamic Stride COT imitation)
++    use_dynamic_gait = False
++    use_imitation = False     # Pure RL velocity tracking (No imitation)
+     
+     if use_dynamic_gait:
+         imitation_func = imitation_dynamic_gait
+@@ -190,22 +185,26 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+         "asset_cfg"
+     ].site_names = site_names
+ 
+-    cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
++    cfg.events["foot_friction"].params["asset_cfg"].body_names = ("left_ankle_roll_link", "right_ankle_roll_link")
++    cfg.events["foot_friction"].params["asset_cfg"].geom_names = None
+ 
+     cfg.rewards["pose"].params["std_standing"] = {".*": 0.05}
+     cfg.rewards["pose"].params["std_walking"] = {
+-        r".*hip_pitch$": 0.5,
+-        r".*hip_roll$": 0.25,
+-        r".*hip_yaw$": 0.2,
+-        r".*knee_pitch$": 0.5,
+-        r".*ankle_pitch$": 0.2,
+-        r".*ankle_roll$": 0.12,
++        r".*hip_pitch.*": 0.5,
++        r".*hip_roll.*": 0.25,
++        r".*hip_yaw.*": 0.2,
++        r".*knee.*": 0.5,
++        r".*ankle_pitch.*": 0.2,
++        r".*ankle_roll.*": 0.12,
++        r".*waist.*": 0.10,
++        r".*shoulder.*": 0.10,
++        r".*elbow.*": 0.10,
++        r".*wrist.*": 0.10,
+     }
+-    if has_torso:
+-        cfg.rewards["pose"].params["std_walking"][r".*torso_yaw$"] = 0.35
++    cfg.rewards["pose"].params["std_running"] = cfg.rewards["pose"].params["std_walking"]
+ 
+-    cfg.rewards["upright"].params["asset_cfg"].body_names = ("base",)
+-    cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("base",)
++    cfg.rewards["upright"].params["asset_cfg"].body_names = ("pelvis",)
++    cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("pelvis",)
+ 
+     for reward_name in ["foot_clearance", "foot_swing_height", "foot_slip"]:
+         cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
+@@ -227,19 +226,8 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+ 
+ 
+ 
+-    # Imitation reward for walking reference motion (weight set to 0.0 if disabled)
+-    cfg.rewards["imitation"] = RewardTermCfg(
+-        func=imitation_func,
+-        weight=1.5 if use_imitation else 0.0,
+-        params={
+-            "data_path": str(ANGAD_WALKING_REFERENCE),
+-            "dynamic_npz_path": str(Path(__file__).resolve().parents[2] / "Gaits" / "csvs" / "gait_cot_dynamic_no_sway.npz"),
+-            "gait_frequency": 1.25,
+-            "std": 0.5,
+-            "command_name": "twist",
+-            "command_threshold": 0.1,
+-        },
+-    )
++    # Pure RL Velocity Tracking: disable imitation reward term completely
++    cfg.rewards.pop("imitation", None)
+ 
+     # Alternating feet contact reward for proper bipedal gait
+     cfg.rewards["alternating_feet"] = RewardTermCfg(
+@@ -265,9 +253,9 @@ def unitree_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+     return cfg
+ 
+ 
+-def angad_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+-    """Create Angad flat terrain velocity tracking configuration."""
+-    cfg = angad_rough_env_cfg(play=play)
++def unitree_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
++    """Create Unitree G1 flat terrain velocity tracking configuration."""
++    cfg = unitree_rough_env_cfg(play=play)
+ 
+     # Switch to flat terrain.
+     if not play:
+@@ -284,15 +272,15 @@ def angad_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+         assert commands is not None
+         twist_cmd = commands["twist"]
+         assert isinstance(twist_cmd, UniformVelocityCommandCfg)
+-        twist_cmd.ranges.lin_vel_x = (-1.0, 1.5)
+-        twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
++        twist_cmd.ranges.lin_vel_x = (-0.5, 1.5)
++        twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
+ 
+     return cfg
+ 
+ 
+-def angad_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+-    """Create Angad balance-only config."""
+-    cfg = angad_flat_env_cfg(play=play)
++def unitree_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
++    """Create Unitree G1 balance-only config."""
++    cfg = unitree_flat_env_cfg(play=play)
+ 
+     assert cfg.commands is not None
+     twist_cmd = cfg.commands["twist"]
+@@ -309,3 +297,9 @@ def angad_balance_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+         cfg.curriculum.pop("command_vel", None)
+ 
+     return cfg
++
++
++# Aliases for backward compatibility
++angad_rough_env_cfg = unitree_rough_env_cfg
++angad_flat_env_cfg = unitree_flat_env_cfg
++angad_balance_env_cfg = unitree_balance_env_cfg
+diff --git a/Unitree_Asimov_Trials/Walk/config/rl_cfg.py b/Unitree_Asimov_Trials/Walk/config/rl_cfg.py
+index e0f67d9..c2fd180 100644
+--- a/Unitree_Asimov_Trials/Walk/config/rl_cfg.py
++++ b/Unitree_Asimov_Trials/Walk/config/rl_cfg.py
+@@ -32,7 +32,8 @@ def asimov_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+             desired_kl=0.01,
+             max_grad_norm=1.0,
+         ),
+-        experiment_name="angad_velocity",
++        experiment_name="unitree_velocity",
++        logger="tensorboard",
+         save_interval=50,
+         num_steps_per_env=24,
+         max_iterations=30_000,
+diff --git a/Unitree_Asimov_Trials/Walk/unitree_constants.py b/Unitree_Asimov_Trials/Walk/unitree_constants.py
+index e0e909f..5e8ff80 100644
+--- a/Unitree_Asimov_Trials/Walk/unitree_constants.py
++++ b/Unitree_Asimov_Trials/Walk/unitree_constants.py
+@@ -13,10 +13,10 @@ from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
+ from mjlab.utils.os import update_assets
+ from mjlab.utils.spec_config import CollisionCfg
+ 
+-# Resolves local Unitree G1 scene XML
+-UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "scene.xml"
++# Resolves local Unitree G1 robot XML (g1.xml without duplicate scene floor geom)
++UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "g1.xml"
+ if not UNITREE_G1_XML.exists():
+-    UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "g1.xml"
++    UNITREE_G1_XML = Path(__file__).resolve().parents[2] / "xmls" / "unitree_g1" / "scene.xml"
+ 
+ UNITREE_ACTION_SCALE = 0.25
+ 
+@@ -92,8 +92,38 @@ UNITREE_G1_STANDING_JOINTS = {
+ 
+ 
+ def get_unitree_spec() -> mujoco.MjSpec:
+-    """Load Unitree G1 MjSpec from XML."""
+-    return mujoco.MjSpec.from_file(str(UNITREE_G1_XML))
++    """Load Unitree G1 MjSpec from XML, strip pre-existing XML actuators & keyframes, and attach IMU sensors."""
++    spec = mujoco.MjSpec.from_file(str(UNITREE_G1_XML))
++    for actuator in list(spec.actuators):
++        spec.delete(actuator)
++    for keyframe in list(spec.keys):
++        spec.delete(keyframe)
++
++    spec.add_sensor(
++        name="imu_ang_vel",
++        type=mujoco.mjtSensor.mjSENS_GYRO,
++        objtype=mujoco.mjtObj.mjOBJ_SITE,
++        objname="imu_in_pelvis",
++    )
++    spec.add_sensor(
++        name="imu_lin_vel",
++        type=mujoco.mjtSensor.mjSENS_VELOCIMETER,
++        objtype=mujoco.mjtObj.mjOBJ_SITE,
++        objname="imu_in_pelvis",
++    )
++    spec.add_sensor(
++        name="imu_quat",
++        type=mujoco.mjtSensor.mjSENS_FRAMEQUAT,
++        objtype=mujoco.mjtObj.mjOBJ_SITE,
++        objname="imu_in_pelvis",
++    )
++    spec.add_sensor(
++        name="root_angmom",
++        type=mujoco.mjtSensor.mjSENS_SUBTREEANGMOM,
++        objtype=mujoco.mjtObj.mjOBJ_BODY,
++        objname="pelvis",
++    )
++    return spec
+ 
+ 
+ UNITREE_G1_ARTICULATION = EntityArticulationInfoCfg(
