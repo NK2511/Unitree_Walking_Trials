@@ -25,7 +25,7 @@ if sys.executable != VENV_PYTHON and os.path.exists(VENV_PYTHON):
     os.execl(VENV_PYTHON, VENV_PYTHON, *sys.argv)
 
 # Configurable defaults when running without arguments
-DEFAULT_TASK_ID = "Mjlab-Velocity-Flat-Angad"
+DEFAULT_TASK_ID = "Mjlab-Velocity-Flat-Unitree"
 DEFAULT_CHECKPOINT_FILE = None
 
 # Keyboard control setup
@@ -158,40 +158,26 @@ def run_play(task_id: str, cfg: PlayConfig):
 
   resume_path = Path(cfg.checkpoint_file) if cfg.checkpoint_file else None
   if resume_path is None:
-      # Auto-detect most recent model checkpoint
+      # Auto-detect most recent model checkpoint across all run subfolders
       import glob
       import re
-      import unitree_constants
       
-      log_root = Path(__file__).parent / "logs" / "rsl_rl" / "unitree_velocity"
+      log_root = Path(__file__).parent / "logs" / "rsl_rl"
+      model_files = list(log_root.glob("**/model_*.pt"))
       
-      # Match run directories starting with YYYY-MM-DD or digits_digits
-      run_dirs = sorted([
-          d for d in glob.glob(os.path.join(log_root, "*"))
-          if os.path.isdir(d) and (re.match(r"^\d{4}-\d{2}-\d{2}", os.path.basename(d)) or re.match(r"^\d+_\d+", os.path.basename(d)))
-      ])
-      
-      if run_dirs:
-          latest_run_dir = run_dirs[-1]
-          model_files = glob.glob(os.path.join(latest_run_dir, "model_*.pt"))
-          
-          # Filter out files and extract model iteration numbers
+      if model_files:
+          # Sort by modification time or iteration number
           valid_models = []
           for mf in model_files:
-              match = re.search(r"model_(\d+)\.pt", os.path.basename(mf))
-              if match:
-                  valid_models.append((int(match.group(1)), mf))
+              match = re.search(r"model_(\d+)\.pt", mf.name)
+              iter_num = int(match.group(1)) if match else 0
+              valid_models.append((iter_num, mf.stat().st_mtime, mf))
           
-          if valid_models:
-              # Sort by iteration number and get the latest
-              valid_models.sort(key=lambda x: x[0])
-              latest_model_path = valid_models[-1][1]
-              resume_path = Path(latest_model_path)
-              print(f"🔄 Auto-detected most recent model in {subfolder}: {resume_path.relative_to(Path(__file__).parent)}")
-          else:
-              print(f"⚠️ No model_*.pt files found in the latest run directory: {latest_run_dir}")
+          valid_models.sort(key=lambda x: (x[0], x[1]))
+          resume_path = valid_models[-1][2]
+          print(f"🔄 Auto-detected most recent model: {resume_path.relative_to(Path(__file__).parent)}")
       else:
-          print(f"⚠️ No run directories found in {log_root}")
+          print(f"⚠️ No model_*.pt files found in {log_root}")
 
   if cfg.num_envs is not None:
     env_cfg.scene.num_envs = cfg.num_envs

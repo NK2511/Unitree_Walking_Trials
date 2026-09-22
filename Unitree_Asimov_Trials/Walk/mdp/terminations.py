@@ -1,16 +1,9 @@
-from __future__ import annotations
+"""Backward-compatible forwarder to envs.unitree_walk.mdp.terminations"""
 
-from typing import TYPE_CHECKING
+import sys
+from pathlib import Path
+REPO_ROOT = str(Path(__file__).resolve().parents[3])
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-import torch
-
-from mjlab.sensor import ContactSensor
-
-if TYPE_CHECKING:
-  from mjlab.envs import ManagerBasedRlEnv
-
-
-def illegal_contact(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-  sensor: ContactSensor = env.scene[sensor_name]
-  assert sensor.data.found is not None
-  return torch.any(sensor.data.found, dim=-1)
+from envs.unitree_walk.mdp.terminations import *

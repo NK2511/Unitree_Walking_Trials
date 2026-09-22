@@ -1,7 +1,9 @@
-from mjlab.envs.mdp import *  # noqa: F401, F403
+"""Backward-compatible forwarder to envs.unitree_walk.mdp"""
 
-from .curriculums import *  # noqa: F403
-from .observations import *  # noqa: F403
-from .rewards import *  # noqa: F403
-from .terminations import *  # noqa: F403
-from .velocity_command import *  # noqa: F403
+import sys
+from pathlib import Path
+REPO_ROOT = str(Path(__file__).resolve().parents[3])
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from envs.unitree_walk.mdp import *

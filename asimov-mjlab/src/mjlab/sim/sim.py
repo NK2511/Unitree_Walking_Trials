@@ -136,8 +136,14 @@ class Simulation:
     # MJWarp model and data.
     with wp.ScopedDevice(self.wp_device):
       self._wp_model = mjwarp.put_model(self._mj_model)
-      self._wp_model.opt.ls_parallel = cfg.ls_parallel
-      self._wp_model.opt.contact_sensor_maxmatch = cfg.contact_sensor_maxmatch
+      try:
+        self._wp_model.opt.ls_parallel = cfg.ls_parallel
+      except (AttributeError, TypeError):
+        pass
+      try:
+        self._wp_model.opt.contact_sensor_maxmatch = cfg.contact_sensor_maxmatch
+      except (AttributeError, TypeError):
+        pass
 
       self._wp_data = mjwarp.put_data(
         self._mj_model,
